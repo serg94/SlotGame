@@ -11,6 +11,8 @@ var SlotGame = {
 
     width: 0,
     height: 0,
+    marginVertical: 0.05,
+    marginHorizontal: 0.022,
     slotWidth: 0,
     slotHeight: 0,
 
@@ -101,20 +103,31 @@ var SlotGame = {
                 this.deltaTops[i] = Math.max(0, this.deltaTops[i] - Math.abs(this.velocities[i]));
             }
 
-            if (this.velocities[i] > 0 || (this.velocities[i] <= 0 && this.deltaTops[i] != 0)) {
+            if (this.velocities[i] > 0 || this.deltaTops[i] != 0) {
                 mustRedraw = true;
-                this._drawColumn(ctx, height, i);
+                this._drawColumn(ctx, height, i); // if motion not exists move into block above
+            } else {
+                this._drawColumn(ctx, height, i, true); // if motion not exists move into block above
             }
         }
 
         this.canvasCtx.clearRect(0, 0, width, height);
-        this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5, 0, 0, width, height * 3 / 5);
+        this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5,
+            this.deltaX, this.deltaY, width, height * 3 / 5);
 
         mustRedraw ? window.requestAnimationFrame(this._draw) : this._ended();
     },
 
-    _drawColumn: function (ctx, height, i) {
+    _drawColumn: function (ctx, height, i, withoutMotion) {
         ctx.clearRect(i * this.slotWidth, 0, this.slotWidth, height);
+
+        if (!withoutMotion) {
+            ctx.globalAlpha = 0.11; // motion step opacity
+            ctx.drawImage(this.canvas, this.deltaX, this.deltaY, this.width, this.height,
+                0, height / 5, this.width, height * 3 / 5);
+            ctx.globalAlpha = 1;
+        }
+
         for (var j = 0; j < 5; j++) {
             this._drawSlot(i, j)
         }
@@ -127,11 +140,19 @@ var SlotGame = {
         var deltaH = delta.deltaH;
 
         var x = i * this.slotWidth + deltaW / 2;
-        var y = j * this.slotHeight + deltaH / 2;
+        var y = j * this.slotHeight + deltaH / 2 + this.deltaTops[i];
+        var width = this.slotWidth - deltaW;
+        var height = this.slotHeight - deltaH;
 
-        y += this.deltaTops[i];
+        var scaleSlot = 0.75;
 
-        this.ctx.drawImage(this.imageMatrix[i][j], x, y, this.slotWidth - deltaW, this.slotHeight - deltaH);
+        x += (1 - scaleSlot) * width / 2;
+        y += (1 - scaleSlot) * height / 2;
+
+        width *= scaleSlot;
+        height *= scaleSlot;
+
+        this.ctx.drawImage(this.imageMatrix[i][j], x, y, width, height);
     },
 
     _fitImageInSlot: function (img) {
@@ -159,10 +180,16 @@ var SlotGame = {
         this.width = canvasCtx.width = canvas.width = canvas.clientWidth * window.devicePixelRatio;
         this.height = canvasCtx.height = canvas.height = canvas.clientHeight * window.devicePixelRatio;
 
+        this.deltaX = this.width * this.marginHorizontal;
+        this.deltaY = this.height * this.marginVertical;
+
+        this.width -= 2 * this.deltaX;
+        this.height -= 2 * this.deltaY;
+
         var c = document.createElement('canvas');
         var ctx = this.ctx = c.getContext('2d');
-        var width = ctx.width = c.width = canvasCtx.width;
-        var height = ctx.height = c.height = 5 / 3 * canvasCtx.height;
+        var width = ctx.width = c.width = this.width;
+        var height = ctx.height = c.height = 5 / 3 * this.height;
 
         this.slotWidth = width / 5;
         this.slotHeight = height / 5;
