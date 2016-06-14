@@ -34,6 +34,7 @@ var SlotGame = {
             this._bindDOMEvents();
             this._initContext();
             this._initDrawingData();
+            this._drawBoard();
         }.bind(this));
     },
 
@@ -118,6 +119,16 @@ var SlotGame = {
         mustRedraw ? window.requestAnimationFrame(this._draw) : this._ended();
     },
 
+    _drawBoard: function (ctx, width, height) {
+        this._initSlotLoopData();
+        for (var i = 0; i < 5; i++) {
+            this._drawColumn(ctx, height, i, true)
+        }
+        this.canvasCtx.clearRect(0, 0, width, height);
+        this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5,
+            this.deltaX, this.deltaY, width, height * 3 / 5);
+    },
+
     _drawColumn: function (ctx, height, i, withoutMotion) {
         ctx.clearRect(i * this.slotWidth, 0, this.slotWidth, height);
 
@@ -195,6 +206,7 @@ var SlotGame = {
         this.slotHeight = height / 5;
 
         this._draw = this._draw.bind(this, ctx, width, height);
+        this._drawBoard = this._drawBoard.bind(this, ctx, width, height);
     },
 
     _initDrawingData: function () {
