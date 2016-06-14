@@ -14,6 +14,14 @@
     body {
         background-color: aquamarine;
     }
+    span {
+        height: 32px;
+        color: #fffb09;
+        font-family: halo;
+        text-align: center;
+        line-height: 32px;
+        font-size: 12px;
+    }
     #slot_game {
         position: absolute;
         top: 50%;
@@ -56,10 +64,10 @@
         bottom: 6%;
         left: 50%;
         width: 50%;
-        height: 10%;
         margin-left: -25%;
         background-image: url(res/Win%20BG.png);
         background-size: 100% 100%;
+        font-size: 14px;
     }
     #slot_time_left {
         position: absolute;
@@ -91,11 +99,11 @@
 <body>
     <div id="slot_game">
         <image id="slot_logo" src="res/Huuuge-Logo.png"></image>
-        <span id="slot_time_left"></span>
-        <span id="spins_left"></span>
+        <span id="slot_time_left">time left: 15</span>
+        <span id="spins_left">spins left: 3</span>
         <canvas id="game"></canvas>
         <div id="slot_play"></div>
-        <span id="slot_win"></span>
+        <span id="slot_win">win: 1,000,000</span>
     </div>
 
     <script type="text/javascript" src="casino.js"></script>

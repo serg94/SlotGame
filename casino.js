@@ -1,3 +1,28 @@
+var Util = {
+    attachFont: function(){
+        var css, head, style,
+            url = ( window.location.protocol == "https:" ) ? 'https://aarkispire-a.akamaihd.net' : 'http://spire.aarki.net';
+        url += '/builds/spear/common/fonts/puma/';
+
+        url = "res/font/halo.regular.ttf";
+
+        //initing some styles and fonts
+        css = '@font-face {font-family: halo;' +
+                'src: url("'+ url + '");';
+
+        head = document.head || document.getElementsByTagName('head')[0];
+        style = document.createElement('style');
+        style.type = 'text/css';
+
+        if (style.styleSheet) {
+            style.styleSheet.cssText = css;
+        } else {
+            style.appendChild(document.createTextNode(css));
+        }
+        head.appendChild(style);
+    }
+};
+
 var SlotGame = {
     canvas: null,
     canvasCtx: null,
@@ -29,6 +54,7 @@ var SlotGame = {
     deltaTops: [],
 
     init: function () {
+        Util.attachFont();
         this._loadSlotImages(function () {
             this.ready = true;
             this._bindDOMEvents();
