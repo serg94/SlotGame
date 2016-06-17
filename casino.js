@@ -132,17 +132,22 @@ var SlotGame = {
 
             if (this.velocities[i] > 0 || this.deltaTops[i] != 0) {
                 mustRedraw = true;
-                this._drawColumn(ctx, height, i); // if motion not exists move into block above
+                this._drawColumn(ctx, height, i);
             } else {
-                this._drawColumn(ctx, height, i, true); // if motion not exists move into block above
+                this._drawColumn(ctx, height, i, true); // draw without motion as it stopped
             }
         }
 
+        this._drawCanvasOnCanvas(ctx, width, height);
+
+        mustRedraw ? window.requestAnimationFrame(this._draw) : this._ended();
+    },
+
+    _drawCanvasOnCanvas: function (ctx, width, height) {
+        width = Math.min(width, ctx.canvas.width); // fix for Safari and FF
         this.canvasCtx.clearRect(0, 0, width, height);
         this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5,
             this.deltaX, this.deltaY, width, height * 3 / 5);
-
-        mustRedraw ? window.requestAnimationFrame(this._draw) : this._ended();
     },
 
     _drawBoard: function (ctx, width, height) {
@@ -150,9 +155,7 @@ var SlotGame = {
         for (var i = 0; i < 5; i++) {
             this._drawColumn(ctx, height, i, true)
         }
-        this.canvasCtx.clearRect(0, 0, width, height);
-        this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5,
-            this.deltaX, this.deltaY, width, height * 3 / 5);
+        this._drawCanvasOnCanvas(ctx, width, height);
     },
 
     _drawColumn: function (ctx, height, i, withoutMotion) {
