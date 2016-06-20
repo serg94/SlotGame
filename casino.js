@@ -40,6 +40,10 @@ var SlotGame = {
     imageMatrix: null,
     spinsCount: 10,
 
+    velocityRange: [0.2, 0.6],
+    velocityCoefficient: 1, // [0, 10]
+    maxVelocityRange: [40, 80],
+
     ready: false,
     slotInProgress: false,
 
@@ -275,6 +279,16 @@ var SlotGame = {
         this.slotWidth = width / 5;
         this.slotHeight = height / 5;
 
+        var min = this.velocityRange[0];
+        var max = this.velocityRange[1];
+        this.incrementRangeTop = min + (max - min) * this.velocityCoefficient / 10;
+        this.incrementRangeBottom = this.incrementRangeTop * 0.6;
+
+        min = this.maxVelocityRange[0];
+        max = this.maxVelocityRange[1];
+        this.maxVelocityRangeTop = min + (max - min) * this.velocityCoefficient / 10;
+        this.maxVelocityRangeBottom = this.maxVelocityRangeTop * 0.6;
+
         this._draw = this._draw.bind(this, ctx, width, height);
         this._drawBoard = this._drawBoard.bind(this, ctx, width, height);
 
@@ -329,7 +343,6 @@ var SlotGame = {
             slotsCount--;
         }
     }
-
 };
 
 function startGame() {
