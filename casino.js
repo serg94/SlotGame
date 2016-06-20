@@ -1,3 +1,11 @@
+HTMLElement.prototype.show = function () {
+    this.style.display = 'block'
+};
+
+HTMLElement.prototype.hide = function () {
+    this.style.display = 'none'
+};
+
 var Util = {
     attachFont: function(){
         var css, head, style,
@@ -30,6 +38,7 @@ var SlotGame = {
     slotUrls: ['7', 'bar', 'cherry', 'lemon', 'scatter'],
     slots: [],
     imageMatrix: null,
+    spinsCount: 10,
 
     ready: false,
     slotInProgress: false,
@@ -45,13 +54,18 @@ var SlotGame = {
     velocityRangeTop: 0.1,
     velocityRangeBottom: 0.05,
     increments: [],
-    incrementRangeTop: 0.25,
-    incrementRangeBottom: 0.15,
+    incrementRangeTop: 0.30,
+    incrementRangeBottom: 0.20,
     maxVelocities: [],
-    maxVelocityRangeTop: 35,
+    maxVelocityRangeTop: 40,
     maxVelocityRangeBottom: 25,
 
     deltaTops: [],
+
+    spinsLeftElem: null,
+    jackpotElem: null,
+    winScoreElem: null,
+    timeLeftElem: null,
 
     init: function () {
         Util.attachFont();
@@ -68,6 +82,9 @@ var SlotGame = {
         if (!this.ready || this.slotInProgress) return;
         this._initSlotLoopData();
         this.slotInProgress = true;
+        this.jackpotElem.hide();
+        this.spinsCount--;
+        this._setSpinsCount();
         window.requestAnimationFrame(this._draw);
     },
 
@@ -95,7 +112,31 @@ var SlotGame = {
 
     _ended: function () {
         this.slotInProgress = false;
-        console.log("ended");
+        this._handleExit();
+        if (this.spinsCount <= 0) {
+            this._spinsCountEnded();
+        }
+        console.log("Spin Ended");
+    },
+
+    _spinsCountEnded: function () {
+        console.log('Game Over');
+    },
+
+    _handleExit: function () {
+        var winningRow = this.imageMatrix.map(function (column) {
+            return column[2];
+        });
+
+        for (var i = 1; i < winningRow.length; i++) if (winningRow[i] != winningRow[i - 1]) {
+            return false;
+        }
+
+        this.jackpotElem.show();
+    },
+
+    _setSpinsCount: function () {
+        this.spinsLeftElem.innerHTML = 'spins left: ' + this.spinsCount;
     },
 
     _getRandomInRange: function (min, max) {
@@ -236,6 +277,13 @@ var SlotGame = {
 
         this._draw = this._draw.bind(this, ctx, width, height);
         this._drawBoard = this._drawBoard.bind(this, ctx, width, height);
+
+        this.spinsLeftElem = document.getElementById('spins_left');
+        this.jackpotElem = document.getElementById('slot_jackpot');
+        this.winScoreElem = document.getElementById('slot_win');
+        this.timeLeftElem = document.getElementById('slot_time_left');
+
+        this._setSpinsCount();
     },
 
     _initDrawingData: function () {

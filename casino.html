@@ -36,7 +36,7 @@
         -ms-user-select: none;
         user-select: none;
     }
-    canvas {
+    canvas, #slot_jackpot {
         width: 75%;
         height: 55%;
         position: absolute;
@@ -45,6 +45,10 @@
         transform: translate(-50%, -50%);
         background: url("res/Slot_machine.png");
         background-size: 100% 100%;
+    }
+    #slot_jackpot {
+        display: none;
+        background-image: url('res/Jackpot.png');
     }
     #slot_play {
         position: absolute;
@@ -104,6 +108,7 @@
         <span id="slot_time_left">time left: 15</span>
         <span id="spins_left">spins left: 3</span>
         <canvas id="game"></canvas>
+        <div id="slot_jackpot"></div>
         <div id="slot_play"></div>
         <span id="slot_win">win: 1,000,000</span>
     </div>
