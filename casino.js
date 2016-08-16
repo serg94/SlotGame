@@ -118,7 +118,6 @@ var SlotGame = {
         cb = typeof cb == 'function' ? cb : function() {};
 
         var urls = this.itemUrls.concat([ this.playButtonUrl, this.bgUrl, this.canvasBgUrl ]);
-        console.log(urls);
         Util.loadImages(urls, function (images) {
             this.canvasBgImg = images.pop();
             this.bgImage = images.pop();
