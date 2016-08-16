@@ -1,53 +1,34 @@
-HTMLElement.prototype.show = function () {
-    this.style.display = 'block'
-};
-
-HTMLElement.prototype.hide = function () {
-    this.style.display = 'none'
-};
-
-var Util = {
-    attachFont: function(){
-        var css, head, style,
-            url = ( window.location.protocol == "https:" ) ? 'https://aarkispire-a.akamaihd.net' : 'http://spire.aarki.net';
-        url += '/builds/spear/common/fonts/puma/';
-
-        url = "res/font/halo.regular.ttf";
-
-        //initing some styles and fonts
-        css = '@font-face {font-family: halo;' +
-                'src: url("'+ url + '");';
-
-        head = document.head || document.getElementsByTagName('head')[0];
-        style = document.createElement('style');
-        style.type = 'text/css';
-
-        if (style.styleSheet) {
-            style.styleSheet.cssText = css;
-        } else {
-            style.appendChild(document.createTextNode(css));
-        }
-        head.appendChild(style);
-    }
-};
-
 var SlotGame = {
     canvas: null,
     canvasCtx: null,
     ctx: null,
-    slotUrls: ['7', 'bar', 'cherry', 'lemon', 'scatter'],
+    itemUrls: [],
+    scores: [],
+    probabilities: [],
+    imageIndexArray: null,
     slots: [],
+    playButtonUrl: null,
+    playButtonImage: null,
+    bgUrl: null,
+    bgImage: null,
     imageMatrix: null,
+    columnCount: 5,
     spinsCount: 10,
+    gameTime: 15, // seconds
+    timeLeft: 15, // seconds
+    countDownStartDate: null,
+    countDownInterval: -1,
+    winScore: 0,
 
-    velocityRange: [0.2, 0.6],
+    velocityRange: [ 0.2, 0.6 ],
     velocityCoefficient: 1, // [0, 10]
-    maxVelocityRange: [40, 80],
+    maxVelocityRange: [ 40, 80 ],
 
     ready: false,
     slotInProgress: false,
+    countDownInProgress: false,
 
-    width: 0,
+    width: 0,   // this is canvas width height, not a widget width, for widget width use this.width()
     height: 0,
     marginVertical: 0.05,
     marginHorizontal: 0.022,
@@ -70,26 +51,154 @@ var SlotGame = {
     jackpotElem: null,
     winScoreElem: null,
     timeLeftElem: null,
+    playBtn: null,
+
+    canvasBgs: {
+        3: 'res/bg/3_slot_machine.png',
+        4: 'res/bg/4_slot_machine.png',
+        5: 'res/bg/Slot_machine.png'
+    },
+    canvasBgUrl: null,
+    canvasBgImg: null,
+    _scoreView: 0, // This is for global score widget
 
     init: function () {
-        Util.attachFont();
-        this._loadSlotImages(function () {
-            this.ready = true;
+        if (bowser.android) {
+            this._androidChrome = bowser.chrome;
+            this._badAndroid = bowser.version < 33; // looks this is fixed version
+        }
+
+        this._isDevice = bowser.mobile || bowser.tablet;
+    },
+
+    initWidgetFromJson: function (json) {
+        this.velocityCoefficient = json['speed'];
+        this.spinsCount = json['totalSpins'];
+        this.timeLeft = this.gameTime = json['gameTime'];
+        this.columnCount = json['columns'];
+        this.bgUrl = json['bg']['url'];
+        this.canvasBgUrl = this.canvasBgs[this.columnCount];
+
+        json.slot_items.forEach(function (w) {
+            this.scores.push(w.score);
+            this.probabilities.push(w.probability);
+            this.itemUrls.push('res/slots/' + w.url);
+        }.bind(this));
+
+        this.playButtonUrl = json.play_button.url;
+    },
+
+    renderView: function (parent_dom) {
+        parent_dom.innerHTML = '\
+            <div class="slot_game">\
+                <div class="slot_logo"></div>\
+                <span class="slot_time_left">00:15</span>\
+                <span class="spins_left">SPINS: 10</span>\
+                <canvas></canvas>\
+                <div class="slot_jackpot"></div>\
+                <div class="slot_play"></div>\
+                <span class="slot_win">WIN: 1,000,000</span>\
+            </div>\
+        ';
+
+        var dom = this.dom = parent_dom.querySelector('.slot_game');
+        this.canvas = dom.querySelector('canvas');
+        this.spinsLeftElem = dom.querySelector('.spins_left');
+        this.jackpotElem = dom.querySelector('.slot_jackpot');
+        this.winScoreElem = dom.querySelector('.slot_win');
+        this.timeLeftElem = dom.querySelector('.slot_time_left');
+        this.playBtn = dom.querySelector('.slot_play');
+
+        this._setSpinsCount();
+        this._setTimeInFormat();
+        this._setWinScore();
+    },
+
+    loadCreativeView: function (cb) {
+        cb = typeof cb == 'function' ? cb : function() {};
+
+        var urls = this.itemUrls.concat([ this.playButtonUrl, this.bgUrl, this.canvasBgUrl ]);
+        console.log(urls);
+        Util.loadImages(urls, function (images) {
+            this.canvasBgImg = images.pop();
+            this.bgImage = images.pop();
+            this.playButtonImage = images.pop();
+            this._init_(images);
+            cb();
+        }.bind(this), cb);
+    },
+
+    _initAndDraw: function () {
+        if (this.ready && !this._alreadyItialised) {
             this._bindDOMEvents();
             this._initContext();
-            this._initDrawingData();
             this._drawBoard();
-        }.bind(this));
+            this._alreadyItialised = true;
+        }
+    },
+
+    _init_: function (images) {
+        this.ready = true;
+        this.slots = images;
+
+        var indexArray = this.imageIndexArray = [];
+        this.probabilities.forEach(function (p, index) {
+            while (--p >= 0) { indexArray.push(index) }
+        });
+
+        this._initHtmlContent();
+        this._initDrawingData();
+        this._initAndDraw();
     },
 
     _slot: function () {
-        if (!this.ready || this.slotInProgress) return;
+        if (!this.ready || this.slotInProgress || this.spinsCount <= 0 ||
+            this.timeLeft <= 0 || this.slots.length == 0) return;
         this._initSlotLoopData();
         this.slotInProgress = true;
         this.jackpotElem.hide();
         this.spinsCount--;
         this._setSpinsCount();
-        window.requestAnimationFrame(this._draw);
+        this._startCountDown();
+        this._gameStart();
+        this._draw();
+    },
+
+    _gameStart: function () {
+        if (!this._gameStartFired) {
+            this._gameStartFired = true;
+        }
+    },
+
+    _startCountDown: function () {
+        if (this.countDownInProgress) return;
+        this.countDownInProgress = true;
+        this.countDownStartDate = new Date();
+        this.countDownInterval = window.setInterval(this._updateTime.bind(this), 1000);
+    },
+
+    _updateTime: function () {
+        this.timeLeft = this.gameTime - Math.floor((new Date() - this.countDownStartDate) / 1000);
+        if (this.timeLeft >= 0) {
+            this._setTimeInFormat();
+        } else {
+            window.clearInterval(this.countDownInterval);
+            this._timeLeft();
+        }
+    },
+
+    _setTimeInFormat: function () {
+        var minute = parseInt(this.timeLeft / 60);
+        var second = (this.timeLeft % 60);
+
+        minute = minute < 10 ? '0' + minute : minute;
+        second = second < 10 ? '0' + second : second;
+
+        this.timeLeftElem.innerHTML =  minute + ':' + second;
+    },
+
+    _timeLeft: function () {
+        //
     },
 
     _initSlotLoopData: function () {
@@ -98,7 +207,7 @@ var SlotGame = {
         this.increments = [];
         this.maxVelocities = [];
 
-        for (var i = 0; i < 5; i++) {
+        for (var i = 0; i < this.columnCount; i++) {
             this.velocities.push(0);
             this.deltaTops.push(0);
             var randomIncrement = this._getRandomInRange(this.incrementRangeBottom, this.incrementRangeTop);
@@ -120,11 +229,10 @@ var SlotGame = {
         if (this.spinsCount <= 0) {
             this._spinsCountEnded();
         }
-        console.log("Spin Ended");
     },
 
     _spinsCountEnded: function () {
-        console.log('Game Over');
+        //
     },
 
     _handleExit: function () {
@@ -132,15 +240,24 @@ var SlotGame = {
             return column[2];
         });
 
-        for (var i = 1; i < winningRow.length; i++) if (winningRow[i] != winningRow[i - 1]) {
-            return false;
+        var item = winningRow[0];
+
+        for (var i = 1; i < winningRow.length; i++) {
+            if (winningRow[i] != item) return false;
         }
 
+        var itemIndex = this.slots.indexOf(item);
+        this.winScore += this.scores[itemIndex];
+        this._setWinScore();
         this.jackpotElem.show();
     },
 
     _setSpinsCount: function () {
-        this.spinsLeftElem.innerHTML = 'spins left: ' + this.spinsCount;
+        this.spinsLeftElem.innerHTML = 'SPINS: ' + this.spinsCount;
+    },
+
+    _setWinScore: function () {
+        this.winScoreElem.innerHTML = 'WIN: ' + this.winScore;
     },
 
     _getRandomInRange: function (min, max) {
@@ -148,11 +265,16 @@ var SlotGame = {
     },
 
     // this and arguments bounded
-    _draw: function (ctx, width, height) {
+    _draw: function () {
+        this._frameStartTime = Date.now();
+
+        var ctx = this.ctx;
+        var width = this.width;
+        var height = 5 / 3 * this.height;
         var mustRedraw = false;
 
-        for (var i = 0; i < 5; i++) {
-            if (this.increments[i] > 0) {
+        for (var i = 0; i < this.columnCount; i++) {
+            if (this.increments[i] > 0) { // very simple easing
                 this.velocities[i] += 2 * this.increments[i];
             } else {
                 this.velocities[i] += this.increments[i];
@@ -162,7 +284,7 @@ var SlotGame = {
                 this.deltaTops[i] += this.velocities[i];
             }
 
-            if (this.deltaTops[i] >= this.slotHeight) {
+            while (this.deltaTops[i] >= this.slotHeight) {
                 this.deltaTops[i] -= this.slotHeight;
                 this._updateSlotsMatrixColumn(i);
             }
@@ -185,19 +307,54 @@ var SlotGame = {
 
         this._drawCanvasOnCanvas(ctx, width, height);
 
-        mustRedraw ? window.requestAnimationFrame(this._draw) : this._ended();
+        if (mustRedraw) {
+            if (this._badAndroid) {
+                var nextFrameTime = this._frameStartTime + 1000 / 60;
+                nextFrameTime = Math.max(0, nextFrameTime - Date.now());
+                window.setTimeout(this._draw, nextFrameTime);
+            } else {
+                window.requestAnimationFrame(this._draw)
+            }
+        } else {
+            this._ended();
+        }
     },
 
     _drawCanvasOnCanvas: function (ctx, width, height) {
-        width = Math.min(width, ctx.canvas.width); // fix for Safari and FF
-        this.canvasCtx.clearRect(0, 0, width, height);
+        width = Math.min(width, ctx.canvas.width); // Fix for Safari and FF ( must be in context range :) )
+
+        if (width == 0) return; // canvas doesn't ready: DOM exception 11
+
+        if (this._badAndroid) {
+            if (this._androidChrome) {
+                if (!this._android_chrome_fixed) {
+                    this.canvasCtx.canvas.width = this.canvasCtx.width;
+                    this._android_chrome_fixed = true;
+                } else {
+                    this.canvasCtx.clearRect(0, 0, width, height);
+                }
+            } else {
+                var canvas = this.canvasCtx.canvas;
+                this.canvasCtx.clearRect(0, 0, width, height);
+                canvas.style.display = 'none';
+                canvas.offsetHeight;
+                canvas.style.display = 'inherit';
+            }
+        } else {
+            this.canvasCtx.clearRect(0, 0, width, height);
+        }
+
         this.canvasCtx.drawImage(ctx.canvas, 0, height / 5, width, height * 3 / 5,
             this.deltaX, this.deltaY, width, height * 3 / 5);
     },
 
-    _drawBoard: function (ctx, width, height) {
+    _drawBoard: function () {
+        var ctx = this.ctx;
+        var width = this.width;
+        var height = 5 / 3 * this.height;
+
         this._initSlotLoopData();
-        for (var i = 0; i < 5; i++) {
+        for (var i = 0; i < this.columnCount; i++) {
             this._drawColumn(ctx, height, i, true)
         }
         this._drawCanvasOnCanvas(ctx, width, height);
@@ -206,7 +363,7 @@ var SlotGame = {
     _drawColumn: function (ctx, height, i, withoutMotion) {
         ctx.clearRect(i * this.slotWidth, 0, this.slotWidth, height);
 
-        if (!withoutMotion) {
+        if (!this._isDevice && !withoutMotion) {
             ctx.globalAlpha = 0.11; // motion step opacity
             ctx.drawImage(this.canvas, this.deltaX, this.deltaY, this.width, this.height,
                 0, height / 5, this.width, height * 3 / 5);
@@ -237,19 +394,22 @@ var SlotGame = {
         width *= scaleSlot;
         height *= scaleSlot;
 
-        this.ctx.drawImage(this.imageMatrix[i][j], x, y, width, height);
+        this.ctx.drawImage(img, x, y, width, height);
     },
 
     _fitImageInSlot: function (img) {
         var imgRatio = img.naturalWidth / img.naturalHeight;
         var slotRatio = this.slotWidth / this.slotHeight;
-        var ratioRatio = imgRatio / slotRatio;
-        var deltaW = 0, deltaH = 0;
+        var deltaW = 0, deltaH = 0, imageWidth, imageHeight;
 
         if (imgRatio > slotRatio) {
-            deltaH = this.slotHeight * (ratioRatio - 1)
+            imageWidth = this.slotWidth;
+            imageHeight = imageWidth / imgRatio;
+            deltaH = this.slotHeight - imageHeight;
         } else {
-            deltaW = this.slotWidth * (1 - ratioRatio)
+            imageHeight = this.slotHeight;
+            imageWidth =  imageHeight * imgRatio;
+            deltaW = this.slotWidth - imageWidth;
         }
 
         return {
@@ -259,25 +419,10 @@ var SlotGame = {
     },
 
     _initContext: function () {
-        var canvas = this.canvas = document.getElementById('game');
-        var canvasCtx = this.canvasCtx = canvas.getContext('2d');
+        this.canvasCtx = this.canvas.getContext('2d');
+        this.ctx = document.createElement('canvas').getContext('2d');
 
-        this.width = canvasCtx.width = canvas.width = canvas.clientWidth * window.devicePixelRatio;
-        this.height = canvasCtx.height = canvas.height = canvas.clientHeight * window.devicePixelRatio;
-
-        this.deltaX = this.width * this.marginHorizontal;
-        this.deltaY = this.height * this.marginVertical;
-
-        this.width -= 2 * this.deltaX;
-        this.height -= 2 * this.deltaY;
-
-        var c = document.createElement('canvas');
-        var ctx = this.ctx = c.getContext('2d');
-        var width = ctx.width = c.width = this.width;
-        var height = ctx.height = c.height = 5 / 3 * this.height;
-
-        this.slotWidth = width / 5;
-        this.slotHeight = height / 5;
+        this._updateContext();
 
         var min = this.velocityRange[0];
         var max = this.velocityRange[1];
@@ -289,20 +434,41 @@ var SlotGame = {
         this.maxVelocityRangeTop = min + (max - min) * this.velocityCoefficient / 10;
         this.maxVelocityRangeBottom = this.maxVelocityRangeTop * 0.6;
 
-        this._draw = this._draw.bind(this, ctx, width, height);
-        this._drawBoard = this._drawBoard.bind(this, ctx, width, height);
+        this._draw = this._draw.bind(this);
+        this._drawBoard = this._drawBoard.bind(this);
+    },
 
-        this.spinsLeftElem = document.getElementById('spins_left');
-        this.jackpotElem = document.getElementById('slot_jackpot');
-        this.winScoreElem = document.getElementById('slot_win');
-        this.timeLeftElem = document.getElementById('slot_time_left');
+    _updateContext: function () {
+        var canvas = this.canvas;
+        var canvasCtx = this.canvasCtx;
 
-        this._setSpinsCount();
+        this.width = canvasCtx.width = canvas.width = canvas.clientWidth * window.devicePixelRatio;
+        this.height = canvasCtx.height = canvas.height = canvas.clientHeight * window.devicePixelRatio;
+
+        this.deltaX = this.width * this.marginHorizontal;
+        this.deltaY = this.height * this.marginVertical;
+
+        this.width -= 2 * this.deltaX;
+        this.height -= 2 * this.deltaY;
+
+        var c = this.ctx.canvas;
+        var ctx = this.ctx;
+        var width = ctx.width = c.width = this.width;
+        var height = ctx.height = c.height = 5 / 3 * this.height;
+
+        this.slotWidth = width / this.columnCount;
+        this.slotHeight = height / 5;
+    },
+
+    _initHtmlContent: function () {
+        this.playBtn.style.backgroundImage = 'url(' + this.playButtonUrl + ')';
+        this.dom.style.backgroundImage = 'url(' + this.bgUrl + ')';
+        this.canvas.style.backgroundImage = 'url(' + this.canvasBgUrl + ')';
     },
 
     _initDrawingData: function () {
         this.imageMatrix = [];
-        for (var i = 0; i < 5; i++) {
+        for (var i = 0; i < this.columnCount; i++) {
             var column = this.imageMatrix[i] = [];
             for (var j = 0; j < 5; j++) {
                 column.push(this._getRandomImage())
@@ -311,42 +477,25 @@ var SlotGame = {
     },
 
     _getRandomImage: function () {
-        var index = Math.floor(Math.random() * this.slots.length);
-        return this.slots[index];
+        // In case if probabilities are different this.imageIndexArray != this.slots
+        var index = Math.floor(Math.random() * this.imageIndexArray.length);
+        var imgIndex = this.imageIndexArray[index];
+        return this.slots[imgIndex] || new Image();
     },
 
     _bindDOMEvents: function () {
-        var playBtn = document.getElementById("slot_play");
-        playBtn.addEventListener('click', this._slot.bind(this))
-    },
-
-    _loadSlotImages: function (cb) {
-        var remainingCount = this.slotUrls.length;
-        var slotsCount = remainingCount;
-
-        var load = function () {
-            if (--remainingCount <= 0) {
-                cb()
-            }
-        };
-
-        var error = function (e) {
-            console.log(e)
-        };
-
-        while (slotsCount) {
-            var img = new Image();
-            img.onload = load;
-            img.onerror = error;
-            img.src = ['res/slots/', this.slotUrls[slotsCount - 1], '.png'].join('');
-            this.slots.push(img);
-            slotsCount--;
-        }
+        this.playBtn.addEventListener('click', this._slot.bind(this))
     }
+
 };
 
 function startGame() {
-    SlotGame.init()
+    SlotGame.init();
+    SlotGame.initWidgetFromJson(Util.game_json);
+    SlotGame.renderView(document.body);
+    SlotGame.loadCreativeView(function () {
+        console.log('ready to slot :)');
+    });
 }
 
 window.addEventListener('load', startGame);
