@@ -61,6 +61,8 @@ var Util = {
 };
 
 Util.game_json = {
+    "resultPath": 'WLW', // win, lose, win, random...
+    "randomSpinWinProbability": 50, // random has 50% win probability, set 0 to make probability natural
     "columns": 5,
     "bg": {
         "url": "res/bg/image.png"

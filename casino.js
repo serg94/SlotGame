@@ -86,6 +86,9 @@ var SlotGame = {
         }.bind(this));
 
         this.playButtonUrl = json.play_button.url;
+
+        this.resultPath = (json.resultPath || '').split(''); // e.g. 'WWL'
+        this.randomSpinWinProbability = (json.randomSpinWinProbability || 0) / 100;
     },
 
     renderView: function (parent_dom) {
@@ -152,7 +155,26 @@ var SlotGame = {
 
     _slot: function () {
         if (!this.ready || this.slotInProgress || this.spinsCount <= 0 ||
-            this.timeLeft <= 0 || this.slots.length == 0) return;
+            this.timeLeft <= 0 || this.slots.length === 0) return;
+
+        var result = this.resultPath.shift();
+
+        if (!result) {
+            if (this.randomSpinWinProbability) {
+                result = Math.random() < this.randomSpinWinProbability ? 'W' : 'L';
+                console.log('You are gonna ', result === 'W' ? 'WIN' : 'Lose');
+            } else {
+                result = 'R';
+            }
+        }
+
+        if (result === 'W') { // win
+            this.winItemImg = this._getRandomImage();
+        } else if (result === 'L') { // lose
+            //
+        }
+
+        this._currentSlotResult = result;
         this._initSlotLoopData();
         this.slotInProgress = true;
         this.jackpotElem.hide();
@@ -187,7 +209,7 @@ var SlotGame = {
     },
 
     _setTimeInFormat: function () {
-        var minute = parseInt(this.timeLeft / 60);
+        var minute = (this.timeLeft / 60) | 0;
         var second = (this.timeLeft % 60);
 
         minute = minute < 10 ? '0' + minute : minute;
@@ -214,12 +236,37 @@ var SlotGame = {
             var randomMaxVelocity = this._getRandomInRange(this.maxVelocityRangeBottom, this.maxVelocityRangeTop);
             this.maxVelocities.push(randomMaxVelocity);
         }
+
+        // velocity increments count before start decreasing
+        var possibleIncCounts = this.increments.map(function (inc, i) { return this.maxVelocities[i] / inc; }, this);
+        var possibleIncCountsSorted = possibleIncCounts.slice().sort(function(a, b) { return a - b; });
+
+        // map items in order of spin stopping
+        // [ 2, 0, 1 ] means 2-th column will stop spinning first, then 0-th will stop, then 1-th
+        this.speedMap = possibleIncCountsSorted.map(function (v) {
+            return possibleIncCounts.indexOf(v);
+        }, this);
     },
 
-    _updateSlotsMatrixColumn: function (columnIndex) {
+    _updateSlotsMatrixColumn: function (columnIndex, result) {
         var column = this.imageMatrix[columnIndex];
         column.pop();
-        column.unshift(this._getRandomImage());
+        var img = this._getRandomImage();
+
+        switch (result) {
+            case 'W':
+                img = this.winItemImg;
+                break;
+            case 'L':
+                while (img === this.firstStoppedItem) {
+                    img = this._getRandomImage();
+                }
+                break;
+            default:
+                break;
+        }
+
+        column.unshift(img);
     },
 
     _ended: function () {
@@ -242,7 +289,7 @@ var SlotGame = {
         var item = winningRow[0];
 
         for (var i = 1; i < winningRow.length; i++) {
-            if (winningRow[i] != item) return false;
+            if (winningRow[i] !== item) return false;
         }
 
         var itemIndex = this.slots.indexOf(item);
@@ -263,6 +310,20 @@ var SlotGame = {
         return Math.random() * (max - min) + min;
     },
 
+    _estimatedItemsMoveCount: function (velocity, increment, initDelta) {
+        if (!increment) return 0;
+
+        velocity = Math.abs(velocity);
+        increment = Math.abs(increment);
+
+        while (velocity > 0) {
+            velocity -= increment;
+            initDelta += velocity;
+        }
+
+        return Math.floor(initDelta / this.slotHeight);
+    },
+
     // this and arguments bounded
     _draw: function () {
         this._frameStartTime = Date.now();
@@ -272,7 +333,10 @@ var SlotGame = {
         var height = 5 / 3 * this.height;
         var mustRedraw = false;
 
-        for (var i = 0; i < this.columnCount; i++) {
+        for (var j = 0; j < this.columnCount; j++) {
+            // handle from fastest to slowest, first stopping column should be handles first
+            var i = this.speedMap[j];
+
             if (this.increments[i] > 0) { // very simple easing
                 this.velocities[i] += 2 * this.increments[i];
             } else {
@@ -283,23 +347,45 @@ var SlotGame = {
                 this.deltaTops[i] += this.velocities[i];
             }
 
-            while (this.deltaTops[i] >= this.slotHeight) {
-                this.deltaTops[i] -= this.slotHeight;
-                this._updateSlotsMatrixColumn(i);
+            if (this.velocities[i] > this.maxVelocities[i]) {
+                this.increments[i] = -Math.abs(this.increments[i]);
             }
 
-            if (this.velocities[i] > this.maxVelocities[i]) {
-                this.increments[i] = -Math.abs(this.increments[i]); // can use easing with 2 quadratic polynomials
+            while (this.deltaTops[i] >= this.slotHeight) {
+                this.deltaTops[i] -= this.slotHeight;
+                if (
+                    this._currentSlotResult === 'W' &&
+                    this.increments[i] < 0 &&
+                    this._estimatedItemsMoveCount(this.velocities[i], this.increments[i], this.deltaTops[i]) === 2
+                ) {
+                    this._updateSlotsMatrixColumn(i, 'W');
+                } else if (
+                    this._currentSlotResult === 'L' &&
+                    this.increments[i] < 0 &&
+                    j === this.columnCount - 1 && // last and fastest animating item
+                    this._estimatedItemsMoveCount(this.velocities[i], this.increments[i], this.deltaTops[i]) === 2
+                ) {
+                    var k = this.speedMap[0]; // fastest item, or first to be stopped
+                    var prevEstimates = this._estimatedItemsMoveCount(this.velocities[k], this.increments[k], this.deltaTops[k]);
+
+                    // finds the first stopping column central img, and takes previous with favor of new items adding count
+                    this.firstStoppedItem = this.imageMatrix[k][2 - prevEstimates];
+
+                    this._updateSlotsMatrixColumn(i, 'L');
+                } else {
+                    this._updateSlotsMatrixColumn(i);
+                }
             }
 
             if (this.velocities[i] < 0) {
                 this.deltaTops[i] = Math.max(0, this.deltaTops[i] - Math.abs(this.velocities[i]));
             }
 
-            if (this.velocities[i] > 0 || this.deltaTops[i] != 0) {
+            if (this.velocities[i] > 0 || this.deltaTops[i] !== 0) {
                 mustRedraw = true;
                 this._drawColumn(ctx, height, i);
             } else {
+                this.velocities[i] = this.increments[i] = 0;
                 this._drawColumn(ctx, height, i, true); // draw without motion as it stopped
             }
         }
@@ -322,7 +408,7 @@ var SlotGame = {
     _drawCanvasOnCanvas: function (ctx, width, height) {
         width = Math.min(width, ctx.canvas.width); // Fix for Safari and FF ( must be in context range :) )
 
-        if (width == 0) return; // canvas doesn't ready: DOM exception 11
+        if (!width) return; // canvas doesn't ready: DOM exception 11
 
         if (this._badAndroid) {
             if (this._androidChrome) {
@@ -468,9 +554,9 @@ var SlotGame = {
     _initDrawingData: function () {
         this.imageMatrix = [];
         for (var i = 0; i < this.columnCount; i++) {
-            var column = this.imageMatrix[i] = [];
+            this.imageMatrix[i] = [];
             for (var j = 0; j < 5; j++) {
-                column.push(this._getRandomImage())
+                this.imageMatrix[i].push(this._getRandomImage());
             }
         }
     },
